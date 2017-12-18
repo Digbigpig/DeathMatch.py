@@ -6,9 +6,9 @@ from discord.ext import commands
 
 DB = {}
 Match_Data = dict()
-returnmsg =''
 
-Weapon = {'dds': {'Hit': 28, 'useSpec': 25, 'numSpec': 2, 'effect': 'POSION', 'type': 'melee'},
+
+Weapon = {'dds': {'Hit': 28, 'useSpec': 25, 'numSpec': 2, 'effect': 'POISON', 'type': 'melee'},
           'whip': {'Hit': 42, 'useSpec': 0, 'numSpec': 1, 'effect': '', 'type': 'melee'},
           'gmaul': {'Hit': 34, 'useSpec': 100, 'numSpec': 3, 'effect': '', 'type': 'melee'},
           'acb': {'Hit': 41, 'useSpec': 0, 'numSpec': 1, 'effect': '', 'type': 'ranged'},
@@ -42,7 +42,7 @@ class Fighter:
         self.Special_Attack_Bar = 100
         self.Food = 2
         self.Runes = 2
-        #TODO: LIMIT the amount of spells they can use
+
 
         self.poison = ''
         self.frozen = ''
@@ -57,21 +57,22 @@ class MatchManager:
         self.bot = bot
 
 
-    @commands.group(pass_context=True)
+    @commands.command(pass_context=True)
     async def test(self, ctx):
         return print(currentChan(ctx.message.server.id, ctx.message.channel.id)['Player_1'])
 
 
-    #TODO:change to ctx.invoked_with to find what alias it uses
-    @commands.group(pass_context=True, aliases=Weapon.keys())
+
+    @commands.command(pass_context=True, aliases=Weapon.keys())
     async def attack(self, ctx):
         start_time = time.time()
-        # check_server(ctx.message.server.id, ctx.message.server.name, ctx.message.channel.id, ctx.message.channel.name)
+
         server = ctx.message.server.id
         channelid = ctx.message.channel.id
         attackerid = ctx.message.author.id
         opponent = ''
         attacker = ''
+        check_server(ctx.message.server.id, ctx.message.server.name, ctx.message.channel.id, ctx.message.channel.name, server, channelid)
 
         if currentChan(server, channelid)['Player_1'] == attackerid and currentChan(server, channelid)['Instance'].Turn == 1:
             opponent = currentChan(server, channelid)['Instance'].Player_2
@@ -91,7 +92,7 @@ class MatchManager:
                 return
 
             await self.WeaponDamage(opponent, attacker, weapon, server, channelid)
-            #TODO: Formatter for attack message, End of match function.
+
 
             print( time.time() - start_time)
             try:
@@ -99,7 +100,7 @@ class MatchManager:
             except AttributeError as e:
                 print('game ended')
 
-    @commands.group(pass_context=True)
+    @commands.command(pass_context=True)
     async def dm(self, ctx):
         server_id = ctx.message.server.id
         server_name = ctx.message.server.name
@@ -124,8 +125,16 @@ class MatchManager:
             currentChan(server, channelid)['Player_2'] = player
             currentChan(server, channelid)['Player_2_Name'] = playername
             currentChan(server, channelid)['Instance'] = Match(server, channelid)
+            currentChan(server, channelid)['Instance'].Turn = random.randint(1, 2)
 
-            await self.bot.say('Accepted match')
+            if currentChan(server, channelid)['Player_1'] == player and currentChan(server, channelid)[
+                'Instance'].Turn == 1:
+                playersturn = currentChan(server, channelid)['Player_1_Name']
+
+            elif currentChan(server, channelid)['Player_2'] == player and currentChan(server, channelid)['Instance'].Turn == 2:
+                playersturn = playername
+
+            await self.bot.say('{} has accepted {}\'s challenge. \n{} makes the first move.'.format(playername, currentChan(server, channelid)['Player_1_Name'], playersturn))
 
         else:
             return await self.bot.say('There is already a match in progress')
@@ -153,23 +162,30 @@ class MatchManager:
         poison_dmg = 0
         #   attacker.Buffs =
 
-        opponent.frozen = ''  # TODO: Make it 75% chance of unfreeze
+        opponent.frozen = ''
 
         if effect == 'FREEZE':
-            freeze = random.randint(0, 2)
-            if freeze == 0:
-                opponent.frozen = 'FROZEN'
-                # TODO: Tell them that they froze them
+            if attacker.Runes >=1:
+                attacker.Runes -= 1
+                freeze = random.randint(0, 2)
+                if freeze == 0:
+                    opponent.frozen = 'FROZEN'
 
+            else:
+                return await self.bot.say('You are out of runes!')
         if opponent.poison == 'POISONED':
-            if random.randint(0, 2) == 1:
-                poison_dmg = random.randint(3, 6)
+            if random.randint(0, 1) == 1:
 
-        if effect == 'POISON' and opponent.poison == '':
-            if random.randint(0, 3) == 3:
-                opponent.poison = 'POISONED'
-                poisoned = 'yes'
-                # TODO: Tell them when they get poisoned
+                poison_dmg = random.randint(3, 6)
+                opponent.HP -= poison_dmg
+
+        print(effect, opponent.poison)
+        if effect == 'POISON'and opponent.poison == '':
+                if random.randint(0, 1) in [0,1]:
+                    print('here')
+                    opponent.poison = 'POISONED'
+                    poisoned = 'yes'
+
 
         for i in range(amount):
             dmgx = random.randint(0, hit)
@@ -182,9 +198,9 @@ class MatchManager:
         if opponent.HP <= 0:
             opponent.HP = 0
 
-        await self.Formatter(opponent, attacker, dmg, poison_dmg, poisoned)
+        await self.Formatter(opponent, attacker, dmg, poison_dmg, poisoned, serverid, channelid)
 
-        if opponent.HP == 0:
+        if opponent.HP <= 0:
             await self.MatchEnd(opponent, attacker, serverid, channelid)
         return
 
@@ -224,14 +240,15 @@ class MatchManager:
         with open('DB.json', 'w') as f:
             json.dump(DB, f, indent=2)
 
-        return await self.bot.say('Game over')
+        return await self.bot.say('\n{} Wins!--- Stat Tracking will be added soon ---- Please message Digbigpig for any feedback'.format(attacker.name))
 
-    async def Formatter(self, opponent, attacker, damage, poison_dmg, poisoned):
+    async def Formatter(self, opponent, attacker, damage, poison_dmg, poisoned, serverid, channelid):
         global returnmsg
         # TODO: Make emojis for the hpbar
 
         msg = ''
 
+        print(poisoned)
         if poisoned == 'yes':
             msg += '`{} has been Poisoned!`\n'.format(opponent.name)
 
@@ -254,10 +271,10 @@ class MatchManager:
         if sum(damage) == 0:
             msg += ('`{} missed their attack!`\n'.format(attacker.name))
 
-        if returnmsg:
-            await self.bot.delete_message(returnmsg)
+        if currentChan(serverid, channelid)['Message']:
+            await self.bot.delete_message(currentChan(serverid, channelid)['Message'])
 
-        returnmsg = await self.bot.say('{}\n{}:\n\n                HP:  {}  **|{}|**'
+        currentChan(serverid, channelid)['Message'] = await self.bot.say('{}\n{}:\n\n                HP:  {}  **|{}|**'
                                        '\n            SPEC:  **{}**\n          FOOD:  {}\tRunes:  {}                                  '
                                         '\n\n\n{}:\n\n                HP:  {}  **|{}|**\n            SPEC:  **{}**\n'
                                        '          FOOD:  {}\tRunes:  {}\n\n'.format(
@@ -299,7 +316,8 @@ def check_server(serverid, servername, channelid, channelname, playerid, playern
                 'Player_1_Name': '',
                 'Player_2': '',
                 'Player_2_Name': '',
-                'Instance': ''})
+                'Instance': '',
+                'Message': ''})
             return
 
     Match_Data['server'].append(
@@ -312,7 +330,8 @@ def check_server(serverid, servername, channelid, channelname, playerid, playern
                 'Player_1_Name': '',
                 'Player_2': '',
                 'Player_2_Name': '',
-                'Instance': ''}
+                'Instance': '',
+                'Message': ''}
                     ]})
 
     with open('DB.json') as f:
